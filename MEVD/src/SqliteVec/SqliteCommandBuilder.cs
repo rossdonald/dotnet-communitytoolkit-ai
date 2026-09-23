@@ -20,6 +20,7 @@ namespace CommunityToolkit.VectorData.SqliteVec;
 internal static class SqliteCommandBuilder
 {
     internal const string DistancePropertyName = "distance";
+    internal const string KeyParameterName = "@key";
 
     public static DbCommand BuildTableCountCommand(SqliteConnection connection, string tableName)
     {
@@ -383,6 +384,24 @@ internal static class SqliteCommandBuilder
         builder.AppendWhereClause(whereClause);
 
         command.CommandText = builder.ToString();
+
+        return command;
+    }
+
+    public static DbCommand BuildDeleteByKeyCommand(
+        SqliteConnection connection,
+        string tableName,
+        string keyColumnName)
+    {
+        var command = connection.CreateCommand();
+
+        command.CommandText = new StringBuilder()
+            .Append("DELETE FROM ").AppendIdentifier(tableName)
+            .Append(" WHERE ").AppendIdentifier(keyColumnName)
+            .Append(" = ").Append(KeyParameterName)
+            .ToString();
+
+        command.Parameters.Add(new SqliteParameter { ParameterName = KeyParameterName });
 
         return command;
     }
