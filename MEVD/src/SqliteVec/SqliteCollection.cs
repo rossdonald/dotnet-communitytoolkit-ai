@@ -562,6 +562,8 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
 
         using var connection = await GetConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        using var transaction = connection.BeginTransaction();
+
         using var dataCommand = SqliteCommandBuilder.BuildInsertCommand(
             connection,
             _dataTableName,
@@ -570,6 +572,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
             generatedEmbeddings,
             data: true,
             replaceIfExists: true);
+        dataCommand.Transaction = transaction;
 
         using (var reader = await connection.ExecuteWithErrorHandlingAsync(
             _collectionMetadata,
@@ -611,7 +614,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
 
             // Deleting vector records first since current version of vector search extension
             // doesn't support Upsert operation, only Delete/Insert.
-            await DeleteVectorRowsAsync(connection, keys, cancellationToken).ConfigureAwait(false);
+            await DeleteVectorRowsAsync(connection, keys, transaction, cancellationToken).ConfigureAwait(false);
 
             using var vectorInsertCommand = SqliteCommandBuilder.BuildInsertCommand(
                 connection,
@@ -620,6 +623,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
                 recordsList,
                 generatedEmbeddings,
                 data: false);
+            vectorInsertCommand.Transaction = transaction;
 
             await connection.ExecuteWithErrorHandlingAsync(
                 _collectionMetadata,
@@ -627,13 +631,17 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
                 () => vectorInsertCommand.ExecuteNonQueryAsync(cancellationToken),
                 cancellationToken).ConfigureAwait(false);
         }
+
+        transaction.Commit();
     }
 
     private async Task InternalDeleteBatchAsync(SqliteConnection connection, List<object> keys, CancellationToken cancellationToken)
     {
+        using var transaction = connection.BeginTransaction();
+
         if (_vectorPropertiesExist)
         {
-            await DeleteVectorRowsAsync(connection, keys, cancellationToken).ConfigureAwait(false);
+            await DeleteVectorRowsAsync(connection, keys, transaction, cancellationToken).ConfigureAwait(false);
         }
 
         // The data table is a regular table with an indexed primary key, so DELETE using IN is efficient.
@@ -641,15 +649,18 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
             connection,
             _dataTableName,
             [new SqliteWhereInCondition(_keyStorageName, keys)]);
+        dataCommand.Transaction = transaction;
 
         await connection.ExecuteWithErrorHandlingAsync(
             _collectionMetadata,
             "DataDelete",
             () => dataCommand.ExecuteNonQueryAsync(cancellationToken),
             cancellationToken).ConfigureAwait(false);
+
+        transaction.Commit();
     }
 
-    private async Task DeleteVectorRowsAsync(SqliteConnection connection, IEnumerable<object> keys, CancellationToken cancellationToken)
+    private async Task DeleteVectorRowsAsync(SqliteConnection connection, IEnumerable<object> keys, SqliteTransaction transaction, CancellationToken cancellationToken)
     {
         // One DELETE per key because the vec0 virtual table cannot use an IN-list, so a single
         // batched DELETE would scan the whole table instead of using the primary key.
@@ -657,6 +668,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
             connection,
             _vectorTableName,
             _keyStorageName);
+        vectorDeleteCommand.Transaction = transaction;
 
         var keyParameter = vectorDeleteCommand.Parameters[SqliteCommandBuilder.KeyParameterName];
 
