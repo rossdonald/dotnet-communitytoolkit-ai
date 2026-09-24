@@ -376,6 +376,23 @@ public sealed class SqliteCommandBuilderTests : IDisposable
         Assert.Equal(30, command.Parameters[3].Value);
     }
 
+    [Fact]
+    public void ItBuildsDeleteByKeyCommand()
+    {
+        // Arrange
+        const string TableName = "TestTable";
+        const string KeyName = "Id";
+
+        // Act
+        var command = SqliteCommandBuilder.BuildDeleteByKeyCommand(this._connection, TableName, KeyName);
+
+        // Assert
+        Assert.Equal("DELETE FROM \"TestTable\" WHERE \"Id\" = " + SqliteCommandBuilder.KeyParameterName, command.CommandText);
+
+        Assert.Equal(SqliteCommandBuilder.KeyParameterName, command.Parameters[0].ParameterName);
+        Assert.Null(command.Parameters[0].Value);
+    }
+
     public void Dispose()
     {
         this._command.Dispose();
