@@ -131,12 +131,6 @@ public sealed class SqliteCommandBuilderTests : IDisposable
             new VectorStoreDataProperty("Address", typeof(string)),
         ]);
 
-        var records = new List<Dictionary<string, object?>>
-        {
-            new() { ["Id"] = 1, ["Name"] = "NameValue1", ["Age"] = "AgeValue1", ["Address"] = "AddressValue1" },
-            new() { ["Id"] = 2, ["Name"] = "NameValue2", ["Age"] = "AgeValue2", ["Address"] = "AddressValue2" },
-        };
-
         // Act
         var command = SqliteCommandBuilder.BuildInsertCommand(
             this._connection,
@@ -181,12 +175,6 @@ public sealed class SqliteCommandBuilderTests : IDisposable
             new VectorStoreDataProperty("Age", typeof(string)),
             new VectorStoreDataProperty("Address", typeof(string)),
         ]);
-
-        var records = new List<Dictionary<string, object?>>
-        {
-            new() { ["Id"] = default(int), ["Name"] = "NameValue1", ["Age"] = "AgeValue1", ["Address"] = "AddressValue1" },
-            new() { ["Id"] = default(int), ["Name"] = "NameValue2", ["Age"] = "AgeValue2", ["Address"] = "AddressValue2" },
-        };
 
         // Act
         var command = SqliteCommandBuilder.BuildInsertCommand(
