@@ -24,7 +24,7 @@ public sealed class SqliteVectorStoreOptions
     {
         VectorVirtualTableName = source?.VectorVirtualTableName;
         EmbeddingGenerator = source?.EmbeddingGenerator;
-        ConnectionInitializer = source?.ConnectionInitializer;
+        ConfigureConnection = source?.ConfigureConnection;
     }
 
     /// <summary>
@@ -45,8 +45,7 @@ public sealed class SqliteVectorStoreOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// If defined, the callback runs after the connection is opened and, on connections used for collection operations, after the sqlite-vec
-    /// extension is loaded.
+    /// If defined, the callback runs after the connection is opened and the sqlite-vec extension is loaded.
     /// </para>
     /// <para>
     /// Use it for per-connection settings that have no connection string equivalent, such as
@@ -58,6 +57,11 @@ public sealed class SqliteVectorStoreOptions
     /// the exception is surfaced to the caller. The callback can run on several connections at the same time, so it must be
     /// thread-safe.
     /// </para>
+    /// <para>
+    /// The callback runs every time a connection is opened. With pooling (the default), a physical connection keeps
+    /// settings from earlier runs and those settings are visible to later operations that reuse it, so the callback
+    /// must be safe to run repeatedly.
+    /// </para>
     /// </remarks>
-    public Action<SqliteConnection>? ConnectionInitializer { get; set; }
+    public Func<SqliteConnection, CancellationToken, ValueTask>? ConfigureConnection { get; set; }
 }

@@ -33,8 +33,8 @@ public sealed class SqliteVectorStore : VectorStore
 
     private readonly IEmbeddingGenerator? _embeddingGenerator;
 
-    /// <summary>Optional callback that runs on each connection after it is opened.</summary>
-    private readonly Action<SqliteConnection>? _connectionInitializer;
+    /// <summary>Optional callback that runs on each connection after it is opened and the sqlite-vec extension is loaded.</summary>
+    private readonly Func<SqliteConnection, CancellationToken, ValueTask>? _configureConnection;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SqliteVectorStore"/> class.
@@ -50,7 +50,7 @@ public sealed class SqliteVectorStore : VectorStore
         options ??= SqliteVectorStoreOptions.Default;
         _vectorVirtualTableName = options.VectorVirtualTableName;
         _embeddingGenerator = options.EmbeddingGenerator;
-        _connectionInitializer = options.ConnectionInitializer;
+        _configureConnection = options.ConfigureConnection;
 
         var connectionStringBuilder = new SqliteConnectionStringBuilder(connectionString);
 
@@ -76,7 +76,7 @@ public sealed class SqliteVectorStore : VectorStore
                     Definition = definition,
                     VectorVirtualTableName = _vectorVirtualTableName,
                     EmbeddingGenerator = _embeddingGenerator,
-                    ConnectionInitializer = _connectionInitializer
+                    ConfigureConnection = _configureConnection
                 });
 
     /// <inheritdoc />
@@ -89,7 +89,7 @@ public sealed class SqliteVectorStore : VectorStore
                 Definition = definition,
                 VectorVirtualTableName = _vectorVirtualTableName,
                 EmbeddingGenerator = _embeddingGenerator,
-                ConnectionInitializer = _connectionInitializer
+                ConfigureConnection = _configureConnection
             }
         );
 #pragma warning restore IDE0090
@@ -103,8 +103,9 @@ public sealed class SqliteVectorStore : VectorStore
 
         using var connection = await SqliteConnectionFactory.OpenAsync(
             _connectionString,
-            _connectionInitializer,
-            loadVector: false,
+            _configureConnection,
+            // The callback is documented to run after the extension loads, so load it whenever one is configured.
+            loadVector: _configureConnection is not null,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var command = connection.CreateCommand();
 

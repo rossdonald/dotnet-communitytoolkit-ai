@@ -9,7 +9,7 @@ using Xunit;
 
 namespace SqliteVec.ConformanceTests;
 
-public sealed class SqliteConnectionInitializerTests : IDisposable
+public sealed class SqliteConfigureConnectionTests : IDisposable
 {
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"sqlitevec-init-{Guid.NewGuid():N}.db");
 
@@ -23,7 +23,7 @@ public sealed class SqliteConnectionInitializerTests : IDisposable
 
         var options = new SqliteCollectionOptions
         {
-            ConnectionInitializer = connection =>
+            ConfigureConnection = async (connection, ct) =>
             {
                 invocations++;
 
@@ -39,7 +39,7 @@ public sealed class SqliteConnectionInitializerTests : IDisposable
             }
         };
 
-        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "InitializerCollection", options);
+        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "CallbackCollection", options);
 
         await collection.EnsureCollectionExistsAsync();
         await collection.UpsertAsync(new TestRecord
@@ -64,14 +64,14 @@ public sealed class SqliteConnectionInitializerTests : IDisposable
 
         var store = new SqliteVectorStore(ConnectionString, new()
         {
-            ConnectionInitializer = _ => invocations++
+            ConfigureConnection = async (connection, ct) => invocations++
         });
 
         await foreach (var _ in store.ListCollectionNamesAsync())
         {
         }
 
-        var collection = store.GetCollection<string, TestRecord>("InitializerStoreCollection");
+        var collection = store.GetCollection<string, TestRecord>("CallbackStoreCollection");
         await collection.EnsureCollectionExistsAsync();
         await collection.UpsertAsync(new TestRecord
         {
@@ -91,13 +91,13 @@ public sealed class SqliteConnectionInitializerTests : IDisposable
 
         var store = new SqliteVectorStore(ConnectionString, new()
         {
-            ConnectionInitializer = _ => invocations++
+            ConfigureConnection = async (connection, ct) => invocations++
         });
 
         Assert.False(await store.CollectionExistsAsync("MissingCollection"));
         await store.EnsureCollectionDeletedAsync("MissingCollection");
 
-        // CollectionExistsAsync and EnsureCollectionDeletedAsync each build a dynamic collection which must call the initializer
+        // CollectionExistsAsync and EnsureCollectionDeletedAsync each build a dynamic collection which must call the callback
         Assert.Equal(2, invocations);
     }
 
@@ -110,7 +110,7 @@ public sealed class SqliteConnectionInitializerTests : IDisposable
         {
             // vec_version is provided by the sqlite-vec extension, so this only works if the
             // extension is loaded before the callback runs.
-            ConnectionInitializer = connection =>
+            ConfigureConnection = async (connection, ct) =>
             {
                 using var command = connection.CreateCommand();
                 command.CommandText = "SELECT vec_version()";
@@ -118,35 +118,74 @@ public sealed class SqliteConnectionInitializerTests : IDisposable
             }
         };
 
-        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "InitializerExtensionCollection", options);
+        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "CallbackExtensionCollection", options);
         await collection.EnsureCollectionExistsAsync();
 
         Assert.False(string.IsNullOrEmpty(vecVersion));
     }
 
     [Fact]
-    public async Task ThrowingInitializerPropagatesExceptionAndDisposesConnection()
+    public async Task StoreCallbackRunsAfterVectorExtensionIsLoaded()
+    {
+        string? vecVersion = null;
+
+        var store = new SqliteVectorStore(ConnectionString, new()
+        {
+            ConfigureConnection = async (connection, ct) =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT vec_version()";
+                vecVersion = command.ExecuteScalar() as string;
+            }
+        });
+
+        await foreach (var _ in store.ListCollectionNamesAsync())
+        {
+        }
+
+        Assert.False(string.IsNullOrEmpty(vecVersion));
+    }
+
+    [Fact]
+    public async Task ThrowingCallbackPropagatesExceptionAndDisposesConnection()
     {
         SqliteConnection? capturedConnection = null;
 
         var options = new SqliteCollectionOptions
         {
-            ConnectionInitializer = connection =>
+            ConfigureConnection = async (connection, ct) =>
             {
                 capturedConnection = connection;
-                throw new InvalidOperationException("Initializer failed.");
+                throw new InvalidOperationException("Callback failed.");
             }
         };
 
-        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "InitializerThrowCollection", options);
+        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "CallbackThrowCollection", options);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => collection.EnsureCollectionExistsAsync());
-        Assert.Equal("Initializer failed.", exception.Message);
+        Assert.Equal("Callback failed.", exception.Message);
 
         // The caller never received the connection, so the connector must dispose it itself.
         Assert.NotNull(capturedConnection);
         Assert.Equal(ConnectionState.Closed, capturedConnection!.State);
+    }
+
+    [Fact]
+    public async Task CallbackReceivesOperationCancellationToken()
+    {
+        using var cts = new CancellationTokenSource();
+        CancellationToken captured = default;
+
+        var options = new SqliteCollectionOptions
+        {
+            ConfigureConnection = async (connection, ct) => captured = ct
+        };
+
+        var collection = new SqliteCollection<string, TestRecord>(ConnectionString, "CallbackTokenCollection", options);
+        await collection.EnsureCollectionExistsAsync(cts.Token);
+
+        Assert.Equal(cts.Token, captured);
     }
 
     public void Dispose()

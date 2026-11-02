@@ -19,7 +19,7 @@ internal static class SqliteConnectionFactory
     /// </remarks>
     public static async ValueTask<SqliteConnection> OpenAsync(
         string connectionString,
-        Action<SqliteConnection>? initializer,
+        Func<SqliteConnection, CancellationToken, ValueTask>? configureConnection,
         bool loadVector,
         CancellationToken cancellationToken)
     {
@@ -34,7 +34,10 @@ internal static class SqliteConnectionFactory
                 connection.LoadVector();
             }
 
-            initializer?.Invoke(connection);
+            if (configureConnection != null)
+            {
+                await configureConnection.Invoke(connection, cancellationToken).ConfigureAwait(false);
+            }
             return connection;
         }
         catch

@@ -32,7 +32,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
     private readonly string _connectionString;
 
     /// <summary>Optional callback that runs on each connection after it is opened and the sqlite-vec extension is loaded.</summary>
-    private readonly Action<SqliteConnection>? _connectionInitializer;
+    private readonly Func<SqliteConnection, CancellationToken, ValueTask>? _configureConnection;
 
     /// <summary>The mapper to use when mapping between the consumer data model and the SQLite record.</summary>
     private readonly SqliteMapper<TRecord> _mapper;
@@ -105,7 +105,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
 
         // Assign.
         _connectionString = connectionString;
-        _connectionInitializer = options.ConnectionInitializer;
+        _configureConnection = options.ConfigureConnection;
         Name = name;
         _model = modelFactory(options);
 
@@ -396,7 +396,7 @@ public class SqliteCollection<TKey, TRecord> : VectorStoreCollection<TKey, TReco
     private ValueTask<SqliteConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
         => SqliteConnectionFactory.OpenAsync(
             _connectionString,
-            _connectionInitializer,
+            _configureConnection,
             loadVector: true,
             cancellationToken: cancellationToken);
 
